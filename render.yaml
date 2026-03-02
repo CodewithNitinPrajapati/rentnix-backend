@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: rentnix-api
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        sync: false   # Set manually in Render dashboard
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: NODE_ENV
+        value: production
