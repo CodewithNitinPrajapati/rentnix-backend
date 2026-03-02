@@ -36,6 +36,27 @@ router.get('/me', requireAuth, async (req, res) => {
         await query(`UPDATE users SET firebase_uid = $1 WHERE id = $2`, [uid, rows[0].id]);
         rows[0].firebase_uid = uid;
       }
+      // Auto-merge placeholder members by phone
+      if (phone) {
+        const digits = phone.replace(/\D/g, '').slice(-10);
+        if (digits) {
+          const placeholders = await query(
+            `SELECT id, group_id FROM group_members WHERE user_id LIKE 'member_%' AND (phone LIKE $1 OR phone LIKE $2)`,
+            [`%${digits}`, `+91${digits}`]
+          );
+          for (const row of placeholders) {
+            const exists = await query(
+              `SELECT id FROM group_members WHERE group_id = $1 AND user_id = $2`,
+              [row.group_id, rows[0].id]
+            );
+            if (exists.length) {
+              await query(`DELETE FROM group_members WHERE id = $1`, [row.id]);
+            } else {
+              await query(`UPDATE group_members SET user_id = $1 WHERE id = $2`, [rows[0].id, row.id]);
+            }
+          }
+        }
+      }
       return res.json({ user: rows[0], isNew: false });
     }
 
@@ -46,7 +67,31 @@ router.get('/me', requireAuth, async (req, res) => {
        RETURNING *`,
       [phone, email, uid]
     );
-    res.status(201).json({ user: inserted[0], isNew: true });
+    const newUser = inserted[0];
+
+    // Auto-merge placeholder members for this new user
+    if (phone) {
+      const digits = phone.replace(/\D/g, '').slice(-10);
+      if (digits) {
+        const placeholders = await query(
+          `SELECT id, group_id FROM group_members WHERE user_id LIKE 'member_%' AND (phone LIKE $1 OR phone LIKE $2)`,
+          [`%${digits}`, `+91${digits}`]
+        );
+        for (const row of placeholders) {
+          const exists = await query(
+            `SELECT id FROM group_members WHERE group_id = $1 AND user_id = $2`,
+            [row.group_id, newUser.id]
+          );
+          if (exists.length) {
+            await query(`DELETE FROM group_members WHERE id = $1`, [row.id]);
+          } else {
+            await query(`UPDATE group_members SET user_id = $1 WHERE id = $2`, [newUser.id, row.id]);
+          }
+        }
+      }
+    }
+
+    res.status(201).json({ user: newUser, isNew: true });
   } catch (err) {
     console.error('[users/me]', err.message);
     res.status(500).json({ error: err.message });

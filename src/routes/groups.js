@@ -7,9 +7,16 @@ const { v4: uuidv4 } = require('uuid');
 // GET /groups — get all groups for current user
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const userId = req.query.user_id; // Supabase UUID of user
+    let userId = req.query.user_id;
+
+    // Resolve userId from firebase_uid if missing
+    if (!userId) {
+      const uRows = await query(`SELECT id FROM users WHERE firebase_uid = $1 LIMIT 1`, [req.uid]);
+      if (uRows.length) userId = uRows[0].id;
+    }
     if (!userId) return res.status(400).json({ error: 'user_id required' });
 
+    // Get groups where this user is a member
     const memberRows = await query(
       `SELECT group_id FROM group_members WHERE user_id = $1`, [userId]
     );
