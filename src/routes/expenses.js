@@ -135,12 +135,12 @@ router.get('/settlements', requireAuth, async (req, res) => {
 // POST /expenses/settlements
 router.post('/settlements', requireAuth, async (req, res) => {
   try {
-    const { group_id, from_user_id, to_user_id, from_user_name, to_user_name, amount } = req.body;
+    const { group_id, from_user_id, to_user_id, from_user_name, to_user_name, amount, payment_method, transaction_id } = req.body;
     const rows = await query(
       `INSERT INTO settlements
-         (group_id, from_user_id, to_user_id, from_user_name, to_user_name, amount)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [group_id, from_user_id, to_user_id, from_user_name, to_user_name, amount]
+         (group_id, from_user_id, to_user_id, from_user_name, to_user_name, amount, payment_method, transaction_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [group_id, from_user_id, to_user_id, from_user_name, to_user_name, amount, payment_method ?? 'upi', transaction_id ?? null]
     );
     res.status(201).json({ settlement: rows[0] });
   } catch (err) {
