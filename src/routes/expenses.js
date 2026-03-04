@@ -54,10 +54,10 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
-// PUT /expenses/:id — edit expense + log history
+// PUT /expenses/:id — edit expense + recalculate splits + log history
 router.put('/:id', requireAuth, async (req, res) => {
   try {
-    const { title, amount, category, note, edited_by_id, edited_by_name } = req.body;
+    const { title, amount, category, note, splits, edited_by_id, edited_by_name } = req.body;
     const expId = req.params.id;
 
     const original = await query(`SELECT * FROM expenses WHERE id = $1`, [expId]);
@@ -71,11 +71,15 @@ router.put('/:id', requireAuth, async (req, res) => {
     if (+old.amount  !== +amount)  { changes.push(`amount: ₹${old.amount} → ₹${amount}`);   previous.amount   = old.amount; }
     if (old.category !== category) { changes.push(`category: ${old.category} → ${category}`); previous.category = old.category; }
     if (old.note     !== note)     { changes.push('note updated');                             previous.note     = old.note; }
+    if (splits && +old.amount !== +amount) { changes.push('splits recalculated'); previous.splits = old.splits; }
+
+    // Use provided splits or keep original
+    const newSplits = splits ?? old.splits;
 
     await transaction(async (client) => {
       await client.query(
-        `UPDATE expenses SET title=$1, amount=$2, category=$3, note=$4 WHERE id=$5`,
-        [title, amount, category, note, expId]
+        `UPDATE expenses SET title=$1, amount=$2, category=$3, note=$4, splits=$5::jsonb WHERE id=$6`,
+        [title, amount, category, note, JSON.stringify(newSplits), expId]
       );
       if (changes.length) {
         await client.query(
