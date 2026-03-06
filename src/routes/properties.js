@@ -222,42 +222,54 @@ router.post('/:id/tenants/:tenantId/rent', requireAuth, async (req, res) => {
     const paid   = +e.amount_paid || 0;
     const status = paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
 
-    const rows = await query(
-      `INSERT INTO rent_entries
-         (tenant_id, property_id, month, year, rent_amount,
-          water_bill, electricity_bill, maintenance_charge, other_charges,
-          amount_paid, status, paid_on, note, prev_units, curr_units, rate_per_unit,
-          payment_batch_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-       ON CONFLICT (tenant_id, month, year)
-       DO UPDATE SET
-         rent_amount        = EXCLUDED.rent_amount,
-         water_bill         = EXCLUDED.water_bill,
-         electricity_bill   = EXCLUDED.electricity_bill,
-         maintenance_charge = EXCLUDED.maintenance_charge,
-         other_charges      = EXCLUDED.other_charges,
-         amount_paid        = rent_entries.amount_paid + EXCLUDED.amount_paid,
-         status             = CASE
-           WHEN rent_entries.amount_paid + EXCLUDED.amount_paid >=
-                EXCLUDED.rent_amount + EXCLUDED.water_bill + EXCLUDED.electricity_bill +
-                EXCLUDED.maintenance_charge + EXCLUDED.other_charges THEN 'paid'
-           WHEN rent_entries.amount_paid + EXCLUDED.amount_paid > 0 THEN 'partial'
-           ELSE 'unpaid' END,
-         paid_on            = CASE WHEN EXCLUDED.amount_paid > 0 THEN NOW() ELSE rent_entries.paid_on END,
-         note               = COALESCE(EXCLUDED.note, rent_entries.note),
-         payment_batch_id   = COALESCE(EXCLUDED.payment_batch_id, rent_entries.payment_batch_id)
-       RETURNING *`,
-      [
-        tenantId, propertyId, e.month, e.year, e.rent_amount,
-        e.water_bill || 0, e.electricity_bill || 0,
-        e.maintenance_charge || 0, e.other_charges || 0,
-        paid, status,
-        paid > 0 ? new Date().toISOString() : null,
-        e.note || null, e.prev_units || null,
-        e.curr_units || null, e.rate_per_unit || null,
-        e.payment_batch_id || null,
-      ]
+    // Check if entry already exists for this month/year
+    const existing = await query(
+      `SELECT id, amount_paid FROM rent_entries WHERE tenant_id=$1 AND month=$2 AND year=$3`,
+      [tenantId, e.month, e.year]
     );
+
+    let rows;
+    if (existing.length > 0) {
+      // UPDATE: add to existing payment
+      const prev = existing[0];
+      const newPaid = +prev.amount_paid + paid;
+      const newStatus = newPaid >= total ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
+      rows = await query(
+        `UPDATE rent_entries SET
+           rent_amount=$1, water_bill=$2, electricity_bill=$3,
+           maintenance_charge=$4, other_charges=$5,
+           amount_paid=$6, status=$7,
+           paid_on = CASE WHEN $8 > 0 THEN NOW() ELSE paid_on END,
+           note=COALESCE($9, note),
+           payment_batch_id=COALESCE($10, payment_batch_id)
+         WHERE id=$11 RETURNING *`,
+        [e.rent_amount, e.water_bill||0, e.electricity_bill||0,
+         e.maintenance_charge||0, e.other_charges||0,
+         newPaid, newStatus, paid, e.note||null,
+         e.payment_batch_id||null, prev.id]
+      );
+    } else {
+      // INSERT new entry
+      rows = await query(
+        `INSERT INTO rent_entries
+           (tenant_id, property_id, month, year, rent_amount,
+            water_bill, electricity_bill, maintenance_charge, other_charges,
+            amount_paid, status, paid_on, note, prev_units, curr_units, rate_per_unit,
+            payment_batch_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         RETURNING *`,
+        [
+          tenantId, propertyId, e.month, e.year, e.rent_amount,
+          e.water_bill||0, e.electricity_bill||0,
+          e.maintenance_charge||0, e.other_charges||0,
+          paid, status,
+          paid > 0 ? new Date().toISOString() : null,
+          e.note||null, e.prev_units||null,
+          e.curr_units||null, e.rate_per_unit||null,
+          e.payment_batch_id||null,
+        ]
+      );
+    }
     res.status(201).json({ rent_entry: rows[0] });
   } catch (err) {
     console.error('[POST rent]', err.message);
