@@ -224,28 +224,26 @@ router.post('/:id/tenants/:tenantId/rent', requireAuth, async (req, res) => {
 
     // Check if entry already exists for this month/year
     const existing = await query(
-      `SELECT id, amount_paid FROM rent_entries WHERE tenant_id=$1 AND month=$2 AND year=$3`,
+      `SELECT * FROM rent_entries WHERE tenant_id=$1 AND month=$2 AND year=$3`,
       [tenantId, e.month, e.year]
     );
 
     let rows;
     if (existing.length > 0) {
-      // UPDATE: add to existing payment
+      // UPDATE: add to existing payment — use EXISTING totalDue for correct status
       const prev = existing[0];
+      const existingTotal = +prev.rent_amount + +prev.water_bill + +prev.electricity_bill +
+                            +prev.maintenance_charge + +prev.other_charges;
       const newPaid = +prev.amount_paid + paid;
-      const newStatus = newPaid >= total ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
+      const newStatus = newPaid >= existingTotal ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
       rows = await query(
         `UPDATE rent_entries SET
-           rent_amount=$1, water_bill=$2, electricity_bill=$3,
-           maintenance_charge=$4, other_charges=$5,
-           amount_paid=$6, status=$7,
-           paid_on = CASE WHEN $8 > 0 THEN NOW() ELSE paid_on END,
-           note=COALESCE($9, note),
-           payment_batch_id=COALESCE($10, payment_batch_id)
-         WHERE id=$11 RETURNING *`,
-        [e.rent_amount, e.water_bill||0, e.electricity_bill||0,
-         e.maintenance_charge||0, e.other_charges||0,
-         newPaid, newStatus, paid, e.note||null,
+           amount_paid=$1, status=$2,
+           paid_on = CASE WHEN $3 > 0 THEN NOW() ELSE paid_on END,
+           note=COALESCE($4, note),
+           payment_batch_id=COALESCE($5, payment_batch_id)
+         WHERE id=$6 RETURNING *`,
+        [newPaid, newStatus, paid, e.note||null,
          e.payment_batch_id||null, prev.id]
       );
     } else {
