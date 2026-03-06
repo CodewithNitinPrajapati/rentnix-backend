@@ -226,8 +226,26 @@ router.post('/:id/tenants/:tenantId/rent', requireAuth, async (req, res) => {
       `INSERT INTO rent_entries
          (tenant_id, property_id, month, year, rent_amount,
           water_bill, electricity_bill, maintenance_charge, other_charges,
-          amount_paid, status, paid_on, note, prev_units, curr_units, rate_per_unit)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+          amount_paid, status, paid_on, note, prev_units, curr_units, rate_per_unit,
+          payment_batch_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       ON CONFLICT (tenant_id, month, year)
+       DO UPDATE SET
+         rent_amount        = EXCLUDED.rent_amount,
+         water_bill         = EXCLUDED.water_bill,
+         electricity_bill   = EXCLUDED.electricity_bill,
+         maintenance_charge = EXCLUDED.maintenance_charge,
+         other_charges      = EXCLUDED.other_charges,
+         amount_paid        = rent_entries.amount_paid + EXCLUDED.amount_paid,
+         status             = CASE
+           WHEN rent_entries.amount_paid + EXCLUDED.amount_paid >=
+                EXCLUDED.rent_amount + EXCLUDED.water_bill + EXCLUDED.electricity_bill +
+                EXCLUDED.maintenance_charge + EXCLUDED.other_charges THEN 'paid'
+           WHEN rent_entries.amount_paid + EXCLUDED.amount_paid > 0 THEN 'partial'
+           ELSE 'unpaid' END,
+         paid_on            = CASE WHEN EXCLUDED.amount_paid > 0 THEN NOW() ELSE rent_entries.paid_on END,
+         note               = COALESCE(EXCLUDED.note, rent_entries.note),
+         payment_batch_id   = COALESCE(EXCLUDED.payment_batch_id, rent_entries.payment_batch_id)
        RETURNING *`,
       [
         tenantId, propertyId, e.month, e.year, e.rent_amount,
@@ -237,6 +255,7 @@ router.post('/:id/tenants/:tenantId/rent', requireAuth, async (req, res) => {
         paid > 0 ? new Date().toISOString() : null,
         e.note || null, e.prev_units || null,
         e.curr_units || null, e.rate_per_unit || null,
+        e.payment_batch_id || null,
       ]
     );
     res.status(201).json({ rent_entry: rows[0] });
