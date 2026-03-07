@@ -200,13 +200,14 @@ router.post('/:id/tenants/:tenantId/rent', requireAuth, async (req, res) => {
     let entryRow;
     if (existing.length > 0) {
       const prev = existing[0];
+      // ADD new charges on top of existing — never overwrite previous bills
       entryRow = (await query(
         `UPDATE rent_entries SET
            rent_amount        = $1,
-           water_bill         = COALESCE($2, water_bill),
-           electricity_bill   = COALESCE($3, electricity_bill),
-           maintenance_charge = COALESCE($4, maintenance_charge),
-           other_charges      = COALESCE($5, other_charges),
+           water_bill         = water_bill         + COALESCE($2, 0),
+           electricity_bill   = electricity_bill   + COALESCE($3, 0),
+           maintenance_charge = maintenance_charge + COALESCE($4, 0),
+           other_charges      = other_charges      + COALESCE($5, 0),
            note               = COALESCE($6, note),
            prev_units         = COALESCE($7, prev_units),
            curr_units         = COALESCE($8, curr_units),
@@ -214,10 +215,10 @@ router.post('/:id/tenants/:tenantId/rent', requireAuth, async (req, res) => {
            payment_batch_id   = COALESCE($10, payment_batch_id)
          WHERE id = $11 RETURNING *`,
         [e.rent_amount,
-         e.water_bill        != null ? e.water_bill        : null,
-         e.electricity_bill  != null ? e.electricity_bill  : null,
-         e.maintenance_charge!= null ? e.maintenance_charge: null,
-         e.other_charges     != null ? e.other_charges     : null,
+         (+e.water_bill        || 0) > 0 ? +e.water_bill         : null,
+         (+e.electricity_bill  || 0) > 0 ? +e.electricity_bill   : null,
+         (+e.maintenance_charge|| 0) > 0 ? +e.maintenance_charge : null,
+         (+e.other_charges     || 0) > 0 ? +e.other_charges      : null,
          e.note||null, e.prev_units||null, e.curr_units||null,
          e.rate_per_unit||null, e.payment_batch_id||null, prev.id]
       ))[0];
@@ -295,6 +296,15 @@ router.get('/:id/tenants/:tenantId/payments', requireAuth, async (req, res) => {
              'year',             re.year,
              'total_due',        (re.rent_amount + re.water_bill + re.electricity_bill
                                   + re.maintenance_charge + re.other_charges),
+             'current_balance',  GREATEST(
+               (re.rent_amount + re.water_bill + re.electricity_bill
+                + re.maintenance_charge + re.other_charges)
+               - GREATEST(re.amount_paid,
+                 (SELECT COALESCE(SUM(pa2.amount_applied),0)
+                  FROM payment_allocations pa2
+                  WHERE pa2.rent_entry_id = re.id)),
+               0
+             ),
              'rent_amount',      re.rent_amount,
              'water_bill',       re.water_bill,
              'electricity_bill', re.electricity_bill,
