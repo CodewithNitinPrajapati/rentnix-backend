@@ -7,18 +7,27 @@
 //   3. Save as: serviceAccountKey.json  (project root mein, .gitignore mein add karo!)
 //   4. .env mein add karo: FIREBASE_SERVICE_ACCOUNT_PATH=./serviceAccountKey.json
 
-const express = require('express');
-const router  = express.Router();
-const { pool } = require('../db'); // tumhara existing neon db pool
+const express      = require('express');
+const router       = express.Router();
+const { pool }     = require('../db');
+const { requireAuth } = require('../middleware/auth'); // tumhara existing neon db pool
 
 // ── Firebase Admin init ──────────────────────────────────────────────────────
 let admin;
 try {
   admin = require('firebase-admin');
   if (!admin.apps.length) {
-    const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_PATH
-      ? require(process.env.FIREBASE_SERVICE_ACCOUNT_PATH)
-      : JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '{}');
+    // Supports: FIREBASE_SERVICE_ACCOUNT (JSON string) or FIREBASE_SERVICE_ACCOUNT_PATH (file path)
+    let serviceAccount;
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    } else if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    } else if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
+      serviceAccount = require(process.env.FIREBASE_SERVICE_ACCOUNT_PATH);
+    } else {
+      throw new Error('No Firebase service account configured');
+    }
 
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
@@ -168,16 +177,25 @@ async function notifySettlement({ groupId, groupName, paidByName, paidByUserId, 
 // ── REST ENDPOINTS ────────────────────────────────────────────────────────────
 
 // Save/update FCM token (Flutter app calls this on login)
-router.post('/fcm-token', async (req, res) => {
+router.post('/fcm-token', requireAuth, async (req, res) => {
   try {
-    const userId   = req.user?.id; // tumhara existing auth middleware
     const { fcm_token } = req.body;
-    if (!userId || !fcm_token) return res.status(400).json({ error: 'Missing fields' });
+    if (!fcm_token) return res.status(400).json({ error: 'Missing fcm_token' });
+
+    // req.uid = Firebase UID (set by requireAuth middleware)
+    // Look up internal user id from firebase_uid
+    const userRows = await pool.query(
+      'SELECT id FROM users WHERE firebase_uid = $1 LIMIT 1',
+      [req.uid]
+    );
+    if (!userRows.rows.length) return res.status(404).json({ error: 'User not found' });
+    const userId = userRows.rows[0].id;
 
     await pool.query(
       'UPDATE users SET fcm_token = $1 WHERE id = $2',
       [fcm_token, userId]
     );
+    console.log('[FCM] Token saved for user:', userId);
     res.json({ ok: true });
   } catch (e) {
     console.error('/fcm-token error:', e);
@@ -186,11 +204,12 @@ router.post('/fcm-token', async (req, res) => {
 });
 
 // Delete FCM token on logout
-router.delete('/fcm-token', async (req, res) => {
+router.delete('/fcm-token', requireAuth, async (req, res) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    await pool.query('UPDATE users SET fcm_token = NULL WHERE id = $1', [userId]);
+    await pool.query(
+      'UPDATE users SET fcm_token = NULL WHERE id = (SELECT id FROM users WHERE firebase_uid = $1)',
+      [req.uid]
+    );
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
