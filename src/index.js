@@ -45,6 +45,22 @@ app.get('/config/:key', async (req, res) => {
   }
 });
 
+// FCM test endpoint (remove after testing)
+app.get('/test-fcm', async (req, res) => {
+  try {
+    const raw    = process.env.FIREBASE_SERVICE_ACCOUNT;
+    const parsed = JSON.parse(raw);
+    res.json({
+      ok:              true,
+      project_id:      parsed.project_id,
+      has_private_key: !!parsed.private_key,
+      key_starts:      parsed.private_key?.substring(0, 30),
+    });
+  } catch(e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 // 404 handler
 app.use((req, res) => res.status(404).json({ error: `Route not found: ${req.method} ${req.path}` }));
 
@@ -59,21 +75,4 @@ app.listen(PORT, () => {
   console.log(`✅ Rentnix API running on port ${PORT}`);
   console.log(`   DATABASE_URL: ${process.env.DATABASE_URL ? '✅ set' : '❌ MISSING'}`);
   console.log(`   FIREBASE_PROJECT_ID: ${process.env.FIREBASE_PROJECT_ID ? '✅ set' : '⚠️  not set (auth will skip aud check)'}`);
-});
-
-
-
-app.get('/test-fcm', async (req, res) => {
-  try {
-    const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-    const parsed = JSON.parse(raw);
-    res.json({ 
-      ok: true,
-      project_id: parsed.project_id,
-      has_private_key: !!parsed.private_key,
-      key_starts: parsed.private_key?.substring(0, 30)
-    });
-  } catch(e) {
-    res.json({ ok: false, error: e.message });
-  }
 });
