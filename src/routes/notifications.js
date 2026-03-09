@@ -9,8 +9,8 @@
 
 const express      = require('express');
 const router       = express.Router();
-const { pool }     = require('../db');
-const { requireAuth } = require('../middleware/auth'); // tumhara existing neon db pool
+const { pool, query } = require('../db');
+const { requireAuth }  = require('../middleware/auth'); // tumhara existing neon db pool
 
 // ── Firebase Admin init ──────────────────────────────────────────────────────
 let admin;
@@ -51,17 +51,17 @@ async function getGroupMemberTokens(groupId, excludeUserId = null) {
   `;
   const params = excludeUserId ? [groupId, excludeUserId] : [groupId];
   const { rows } = await pool.query(query, params);
-  return rows.map(r => r.fcm_token).filter(Boolean);
+  return rows2.map(r => r.fcm_token).filter(Boolean);
 }
 
 // ── Helper: specific users ke tokens laao ───────────────────────────────────
 async function getUserTokens(userIds) {
   if (!userIds.length) return [];
-  const { rows } = await pool.query(
+  const rows3 = await query(
     `SELECT fcm_token FROM users WHERE id = ANY($1) AND fcm_token IS NOT NULL`,
     [userIds]
   );
-  return rows.map(r => r.fcm_token).filter(Boolean);
+  return rows2.map(r => r.fcm_token).filter(Boolean);
 }
 
 // ── Helper: FCM send karo (multiple tokens) ──────────────────────────────────
@@ -100,7 +100,7 @@ async function sendToTokens(tokens, notification, data = {}) {
         if (code === 'messaging/invalid-registration-token' ||
             code === 'messaging/registration-token-not-registered') {
           // Token invalid — DB se delete karo
-          pool.query('UPDATE users SET fcm_token = NULL WHERE fcm_token = $1', [tokens[idx]])
+          query('UPDATE users SET fcm_token = NULL WHERE fcm_token = $1', [tokens[idx]])
             .catch(() => {});
         }
       }
@@ -184,14 +184,14 @@ router.post('/fcm-token', requireAuth, async (req, res) => {
 
     // req.uid = Firebase UID (set by requireAuth middleware)
     // Look up internal user id from firebase_uid
-    const userRows = await pool.query(
+    const userRows = await query(
       'SELECT id FROM users WHERE firebase_uid = $1 LIMIT 1',
       [req.uid]
     );
-    if (!userRows.rows.length) return res.status(404).json({ error: 'User not found' });
-    const userId = userRows.rows[0].id;
+    if (!userRows.length) return res.status(404).json({ error: 'User not found' });
+    const userId = userRows[0].id;
 
-    await pool.query(
+    await query(
       'UPDATE users SET fcm_token = $1 WHERE id = $2',
       [fcm_token, userId]
     );
