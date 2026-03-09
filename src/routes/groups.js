@@ -3,6 +3,7 @@ const router  = express.Router();
 const { query, transaction } = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
+const { notifyMemberAdded } = require('./notifications');
 
 // ─────────────────────────────────────────────────────────────
 //  HELPER: Normalize phone → +91XXXXXXXXXX
@@ -318,6 +319,22 @@ router.post('/:id/members', requireAuth, async (req, res) => {
        RETURNING *`,
       [groupId, uid, resolvedName, normPhone]
     );
+
+    // Notify group members about new member (fire-and-forget)
+    try {
+      const groupRows = await query(`SELECT name FROM groups WHERE id = $1`, [groupId]);
+      const groupName = groupRows[0]?.name || 'Group';
+      const adderRows = await query(`SELECT name FROM users WHERE firebase_uid = $1 LIMIT 1`, [req.uid]);
+      const adderName = adderRows[0]?.name || 'Someone';
+      notifyMemberAdded({
+        groupId,
+        groupName,
+        addedByName:      adderName,
+        newMemberUserId:  uid.startsWith('member_') ? null : uid,
+        newMemberName:    resolvedName,
+      }).catch(() => {});
+    } catch (_) {}
+
     res.status(201).json({ member: rows[0] });
   } catch (err) {
     console.error('[POST members]', err.message);

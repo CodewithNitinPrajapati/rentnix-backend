@@ -2,6 +2,7 @@ const express = require('express');
 const router  = express.Router();
 const { query, transaction } = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { notifyExpenseAdded, notifyExpenseUpdated } = require('./notifications');
 
 // ─────────────────────────────────────────────────────────────
 //  HELPER: Calculate equal splits for a group expense
@@ -164,6 +165,22 @@ router.post('/', requireAuth, async (req, res) => {
       await updatePairwiseBalances(client, finalSplits, paid_by, group_id, +1);
     });
 
+    // Notify group members (fire-and-forget)
+    try {
+      const grpRows = await query(`SELECT name FROM groups WHERE id = $1`, [group_id]);
+      const grpName = grpRows[0]?.name || 'Group';
+      const adderRows = await query(`SELECT name FROM users WHERE firebase_uid = $1 LIMIT 1`, [req.uid]);
+      const adderName = adderRows[0]?.name || paid_by_name || 'Someone';
+      notifyExpenseAdded({
+        groupId:       group_id,
+        groupName:     grpName,
+        addedByName:   adderName,
+        addedByUserId: paid_by,
+        expenseTitle:  title,
+        amount:        numericAmount,
+      }).catch(() => {});
+    } catch (_) {}
+
     res.status(201).json({ expense: newExpense });
   } catch (err) {
     console.error('[POST /expenses]', err.message);
@@ -249,6 +266,22 @@ router.put('/:id', requireAuth, async (req, res) => {
       updatedExpense = rows.rows[0];
     });
 
+    // Notify group members (fire-and-forget)
+    try {
+      const grpRows = await query(`SELECT name FROM groups WHERE id = $1`, [updatedExpense.group_id]);
+      const grpName = grpRows[0]?.name || 'Group';
+      const editorRows = await query(`SELECT name FROM users WHERE firebase_uid = $1 LIMIT 1`, [req.uid]);
+      const editorName = editorRows[0]?.name || 'Someone';
+      notifyExpenseUpdated({
+        groupId:         updatedExpense.group_id,
+        groupName:       grpName,
+        updatedByName:   editorName,
+        updatedByUserId: updatedExpense.paid_by,
+        expenseTitle:    updatedExpense.title,
+        action:          'updated',
+      }).catch(() => {});
+    } catch (_) {}
+
     res.json({ expense: updatedExpense });
   } catch (err) {
     console.error('[PUT /expenses]', err.message);
@@ -276,6 +309,22 @@ router.delete('/:id', requireAuth, async (req, res) => {
       await updatePairwiseBalances(client, splits, exp.paid_by, exp.group_id, -1);
       await client.query(`DELETE FROM expenses WHERE id = $1`, [req.params.id]);
     });
+
+    // Notify group members (fire-and-forget)
+    try {
+      const grpRows = await query(`SELECT name FROM groups WHERE id = $1`, [exp.group_id]);
+      const grpName = grpRows[0]?.name || 'Group';
+      const deleterRows = await query(`SELECT name FROM users WHERE firebase_uid = $1 LIMIT 1`, [req.uid]);
+      const deleterName = deleterRows[0]?.name || 'Someone';
+      notifyExpenseUpdated({
+        groupId:         exp.group_id,
+        groupName:       grpName,
+        updatedByName:   deleterName,
+        updatedByUserId: exp.paid_by,
+        expenseTitle:    exp.title,
+        action:          'deleted',
+      }).catch(() => {});
+    } catch (_) {}
 
     res.json({ success: true });
   } catch (err) {
