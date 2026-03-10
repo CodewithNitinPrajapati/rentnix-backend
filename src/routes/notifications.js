@@ -1,7 +1,7 @@
 // routes/notifications.js
 const express        = require('express');
 const router         = express.Router();
-const { query }      = require('../db');
+const { pool }       = require('../db');
 const { requireAuth } = require('../middleware/auth');
 
 // ── Firebase Admin init ──────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ try {
   console.warn('[FCM] Firebase Admin not configured:', e.message);
 }
 
-// ── Helper: group ke sab members ke FCM tokens laao ─────────────────────────
+// pool.query use karo — automatic type coercion hoti hai
 async function getGroupMemberTokens(groupId, excludeUserId = null) {
   let sql, params;
   if (excludeUserId) {
@@ -34,7 +34,7 @@ async function getGroupMemberTokens(groupId, excludeUserId = null) {
            JOIN users u ON u.id::text = gm.user_id
            WHERE gm.group_id::text = $1
              AND u.fcm_token IS NOT NULL AND u.fcm_token != ''
-             AND u.id::text != $2::text`;
+             AND u.id::text != $2`;
     params = [groupId, excludeUserId];
   } else {
     sql = `SELECT u.fcm_token FROM group_members gm
@@ -43,24 +43,22 @@ async function getGroupMemberTokens(groupId, excludeUserId = null) {
              AND u.fcm_token IS NOT NULL AND u.fcm_token != ''`;
     params = [groupId];
   }
-  const rows = await query(sql, params);
-  return rows.map(r => r.fcm_token).filter(Boolean);
+  const result = await pool.query(sql, params);
+  return result.rows.map(r => r.fcm_token).filter(Boolean);
 }
 
-// ── Helper: specific users ke tokens laao ───────────────────────────────────
 async function getUserTokens(userIds) {
   if (!userIds.length) return [];
-  const rows = await query(
-    `SELECT fcm_token FROM users WHERE id::text = ANY($1::text[]) AND fcm_token IS NOT NULL`,
+  const result = await pool.query(
+    `SELECT fcm_token FROM users WHERE id::text = ANY($1) AND fcm_token IS NOT NULL`,
     [userIds]
   );
-  return rows.map(r => r.fcm_token).filter(Boolean);
+  return result.rows.map(r => r.fcm_token).filter(Boolean);
 }
 
-// ── Helper: FCM send karo ────────────────────────────────────────────────────
 async function sendToTokens(tokens, notification, data = {}) {
   if (!admin || !tokens.length) {
-    console.log('[FCM] No tokens to send to, skipping');
+    console.log('[FCM] No tokens, skipping. Count:', tokens.length);
     return;
   }
   try {
@@ -81,7 +79,7 @@ async function sendToTokens(tokens, notification, data = {}) {
         const code = resp.error?.code;
         if (code === 'messaging/invalid-registration-token' ||
             code === 'messaging/registration-token-not-registered') {
-          query('UPDATE users SET fcm_token = NULL WHERE fcm_token = $1', [tokens[idx]]).catch(() => {});
+          pool.query('UPDATE users SET fcm_token = NULL WHERE fcm_token = $1', [tokens[idx]]).catch(() => {});
         }
       }
     });
@@ -90,9 +88,8 @@ async function sendToTokens(tokens, notification, data = {}) {
   }
 }
 
-// ── Notification functions ───────────────────────────────────────────────────
 async function notifyExpenseAdded({ groupId, groupName, addedByName, addedByUserId, expenseTitle, amount }) {
-  console.log('[FCM] notifyExpenseAdded called, groupId:', groupId);
+  console.log('[FCM] notifyExpenseAdded, groupId:', groupId, 'excludeUser:', addedByUserId);
   const tokens = await getGroupMemberTokens(groupId, addedByUserId);
   console.log('[FCM] tokens found:', tokens.length);
   await sendToTokens(tokens,
@@ -138,23 +135,25 @@ router.post('/fcm-token', requireAuth, async (req, res) => {
   try {
     const { fcm_token } = req.body;
     if (!fcm_token) return res.status(400).json({ error: 'Missing fcm_token' });
-    const userRows = await query(
+
+    const userResult = await pool.query(
       'SELECT id FROM users WHERE firebase_uid = $1 LIMIT 1', [req.uid]
     );
-    if (!userRows.length) return res.status(404).json({ error: 'User not found' });
-    const userId = userRows[0].id;
-    await query('UPDATE users SET fcm_token = $1 WHERE id = $2', [fcm_token, userId]);
+    if (!userResult.rows.length) return res.status(404).json({ error: 'User not found' });
+    const userId = userResult.rows[0].id;
+
+    await pool.query('UPDATE users SET fcm_token = $1 WHERE id = $2', [fcm_token, userId]);
     console.log('[FCM] Token saved for user:', userId);
     res.json({ ok: true });
   } catch (e) {
-    console.error('/fcm-token error:', e);
+    console.error('/fcm-token error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
 router.delete('/fcm-token', requireAuth, async (req, res) => {
   try {
-    await query(
+    await pool.query(
       'UPDATE users SET fcm_token = NULL WHERE id = (SELECT id FROM users WHERE firebase_uid = $1)',
       [req.uid]
     );
