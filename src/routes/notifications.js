@@ -32,14 +32,14 @@ async function getGroupMemberTokens(groupId, excludeUserId = null) {
   if (excludeUserId) {
     sql = `SELECT u.fcm_token FROM group_members gm
            JOIN users u ON u.id = gm.user_id
-           WHERE gm.group_id = $1::uuid
+           WHERE gm.group_id::text = $1
              AND u.fcm_token IS NOT NULL AND u.fcm_token != ''
-             AND u.id != $2::uuid`;
+             AND u.id::text != $2::text`;
     params = [groupId, excludeUserId];
   } else {
     sql = `SELECT u.fcm_token FROM group_members gm
            JOIN users u ON u.id = gm.user_id
-           WHERE gm.group_id = $1::uuid
+           WHERE gm.group_id::text = $1
              AND u.fcm_token IS NOT NULL AND u.fcm_token != ''`;
     params = [groupId];
   }
@@ -51,7 +51,7 @@ async function getGroupMemberTokens(groupId, excludeUserId = null) {
 async function getUserTokens(userIds) {
   if (!userIds.length) return [];
   const rows = await query(
-    `SELECT fcm_token FROM users WHERE id = ANY($1::uuid[]) AND fcm_token IS NOT NULL`,
+    `SELECT fcm_token FROM users WHERE id::text = ANY($1::text[]) AND fcm_token IS NOT NULL`,
     [userIds]
   );
   return rows.map(r => r.fcm_token).filter(Boolean);
