@@ -31,14 +31,14 @@ async function getGroupMemberTokens(groupId, excludeUserId = null) {
   let sql, params;
   if (excludeUserId) {
     sql = `SELECT u.fcm_token FROM group_members gm
-           JOIN users u ON u.id = gm.user_id
+           JOIN users u ON u.id::text = gm.user_id
            WHERE gm.group_id::text = $1
              AND u.fcm_token IS NOT NULL AND u.fcm_token != ''
              AND u.id::text != $2::text`;
     params = [groupId, excludeUserId];
   } else {
     sql = `SELECT u.fcm_token FROM group_members gm
-           JOIN users u ON u.id = gm.user_id
+           JOIN users u ON u.id::text = gm.user_id
            WHERE gm.group_id::text = $1
              AND u.fcm_token IS NOT NULL AND u.fcm_token != ''`;
     params = [groupId];
