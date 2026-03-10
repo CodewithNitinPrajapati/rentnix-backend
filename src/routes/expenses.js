@@ -178,7 +178,7 @@ router.post('/', requireAuth, async (req, res) => {
         addedByUserId: paid_by,
         expenseTitle:  title,
         amount:        numericAmount,
-      }).catch(() => {});
+      }).catch((e) => console.error("[FCM] error:", e));
     } catch (_) {}
 
     res.status(201).json({ expense: newExpense });
@@ -279,7 +279,7 @@ router.put('/:id', requireAuth, async (req, res) => {
         updatedByUserId: updatedExpense.paid_by,
         expenseTitle:    updatedExpense.title,
         action:          'updated',
-      }).catch(() => {});
+      }).catch((e) => console.error("[FCM] error:", e));
     } catch (_) {}
 
     res.json({ expense: updatedExpense });
@@ -323,7 +323,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
         updatedByUserId: exp.paid_by,
         expenseTitle:    exp.title,
         action:          'deleted',
-      }).catch(() => {});
+      }).catch((e) => console.error("[FCM] error:", e));
     } catch (_) {}
 
     res.json({ success: true });
