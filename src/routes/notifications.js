@@ -30,7 +30,7 @@ try {
 async function getGroupMemberTokens(groupId, excludeUserId = null) {
   const sql = excludeUserId
     ? `SELECT u.fcm_token FROM group_members gm JOIN users u ON u.id = gm.user_id
-       WHERE gm.group_id = $1 AND u.fcm_token IS NOT NULL AND u.fcm_token != '' AND u.id != $2`
+       WHERE gm.group_id = $1::uuid::uuid AND u.fcm_token IS NOT NULL AND u.fcm_token != '' AND u.id != $2`
     : `SELECT u.fcm_token FROM group_members gm JOIN users u ON u.id = gm.user_id
        WHERE gm.group_id = $1 AND u.fcm_token IS NOT NULL AND u.fcm_token != ''`;
   const params = excludeUserId ? [groupId, excludeUserId] : [groupId];
