@@ -1,7 +1,7 @@
 // routes/notifications.js
 const express        = require('express');
 const router         = express.Router();
-const { pool, query } = require('../db');
+const { query }      = require('../db');
 const { requireAuth } = require('../middleware/auth');
 
 // ── Firebase Admin init ──────────────────────────────────────────────────────
@@ -28,12 +28,21 @@ try {
 
 // ── Helper: group ke sab members ke FCM tokens laao ─────────────────────────
 async function getGroupMemberTokens(groupId, excludeUserId = null) {
-  const sql = excludeUserId
-    ? `SELECT u.fcm_token FROM group_members gm JOIN users u ON u.id = gm.user_id
-       WHERE gm.group_id = $1::uuid::uuid::uuid AND u.fcm_token IS NOT NULL AND u.fcm_token != '' AND u.id != $2`
-    : `SELECT u.fcm_token FROM group_members gm JOIN users u ON u.id = gm.user_id
-       WHERE gm.group_id = $1::uuid AND u.fcm_token IS NOT NULL AND u.fcm_token != ''`;
-  const params = excludeUserId ? [groupId, excludeUserId] : [groupId];
+  let sql, params;
+  if (excludeUserId) {
+    sql = `SELECT u.fcm_token FROM group_members gm
+           JOIN users u ON u.id = gm.user_id
+           WHERE gm.group_id = $1::uuid
+             AND u.fcm_token IS NOT NULL AND u.fcm_token != ''
+             AND u.id != $2::uuid`;
+    params = [groupId, excludeUserId];
+  } else {
+    sql = `SELECT u.fcm_token FROM group_members gm
+           JOIN users u ON u.id = gm.user_id
+           WHERE gm.group_id = $1::uuid
+             AND u.fcm_token IS NOT NULL AND u.fcm_token != ''`;
+    params = [groupId];
+  }
   const rows = await query(sql, params);
   return rows.map(r => r.fcm_token).filter(Boolean);
 }
@@ -50,7 +59,10 @@ async function getUserTokens(userIds) {
 
 // ── Helper: FCM send karo ────────────────────────────────────────────────────
 async function sendToTokens(tokens, notification, data = {}) {
-  if (!admin || !tokens.length) return;
+  if (!admin || !tokens.length) {
+    console.log('[FCM] No tokens to send to, skipping');
+    return;
+  }
   try {
     const response = await admin.messaging().sendEachForMulticast({
       tokens,
@@ -65,6 +77,7 @@ async function sendToTokens(tokens, notification, data = {}) {
     console.log(`[FCM] Sent: ${response.successCount} ok, ${response.failureCount} failed`);
     response.responses.forEach((resp, idx) => {
       if (!resp.success) {
+        console.error('[FCM] Token failed:', resp.error?.code);
         const code = resp.error?.code;
         if (code === 'messaging/invalid-registration-token' ||
             code === 'messaging/registration-token-not-registered') {
@@ -79,7 +92,9 @@ async function sendToTokens(tokens, notification, data = {}) {
 
 // ── Notification functions ───────────────────────────────────────────────────
 async function notifyExpenseAdded({ groupId, groupName, addedByName, addedByUserId, expenseTitle, amount }) {
+  console.log('[FCM] notifyExpenseAdded called, groupId:', groupId);
   const tokens = await getGroupMemberTokens(groupId, addedByUserId);
+  console.log('[FCM] tokens found:', tokens.length);
   await sendToTokens(tokens,
     { title: `New expense in ${groupName}`, body: `${addedByName} added "${expenseTitle}" Rs.${Math.round(amount)}` },
     { route: `/group/${groupId}`, type: 'expense' }
