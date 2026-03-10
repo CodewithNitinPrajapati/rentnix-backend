@@ -60,7 +60,15 @@ app.get('/test-fcm', async (req, res) => {
     res.json({ ok: false, error: e.message });
   }
 });
-
+app.get('/debug-fcm', async (req, res) => {
+  try {
+    const { query } = require('./db');
+    const rows = await query('SELECT id, name, fcm_token FROM users LIMIT 5');
+    res.json(rows);
+  } catch(e) {
+    res.json({ error: e.message });
+  }
+});
 // 404 handler
 app.use((req, res) => res.status(404).json({ error: `Route not found: ${req.method} ${req.path}` }));
 
