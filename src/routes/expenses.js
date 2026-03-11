@@ -169,16 +169,17 @@ router.post('/', requireAuth, async (req, res) => {
     try {
       const grpRows = await query(`SELECT name FROM groups WHERE id = $1`, [group_id]);
       const grpName = grpRows[0]?.name || 'Group';
-      const adderRows = await query(`SELECT name FROM users WHERE firebase_uid = $1 LIMIT 1`, [req.uid]);
+      const adderRows = await query(`SELECT id, name FROM users WHERE firebase_uid = $1 LIMIT 1`, [req.uid]);
       const adderName = adderRows[0]?.name || paid_by_name || 'Someone';
+      const adderId   = adderRows[0]?.id;
       notifyExpenseAdded({
         groupId:       group_id,
         groupName:     grpName,
         addedByName:   adderName,
-        addedByUserId: paid_by,
+        addedByUserId: adderId,
         expenseTitle:  title,
         amount:        numericAmount,
-      }).catch((e) => console.error("[FCM] error:", e));
+      }).catch(() => {});
     } catch (_) {}
 
     res.status(201).json({ expense: newExpense });
@@ -279,7 +280,7 @@ router.put('/:id', requireAuth, async (req, res) => {
         updatedByUserId: updatedExpense.paid_by,
         expenseTitle:    updatedExpense.title,
         action:          'updated',
-      }).catch((e) => console.error("[FCM] error:", e));
+      }).catch(() => {});
     } catch (_) {}
 
     res.json({ expense: updatedExpense });
@@ -323,7 +324,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
         updatedByUserId: exp.paid_by,
         expenseTitle:    exp.title,
         action:          'deleted',
-      }).catch((e) => console.error("[FCM] error:", e));
+      }).catch(() => {});
     } catch (_) {}
 
     res.json({ success: true });
