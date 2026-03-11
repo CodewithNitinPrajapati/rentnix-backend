@@ -47,6 +47,19 @@ async function getGroupMemberTokens(groupId, excludeUserId = null) {
   return result.rows.map(r => r.fcm_token).filter(Boolean);
 }
 
+async function getGroupMemberUserIds(groupId, excludeUserId = null) {
+  let sql, params;
+  if (excludeUserId) {
+    sql = `SELECT user_id FROM group_members WHERE group_id::text = $1 AND user_id != $2`;
+    params = [groupId, excludeUserId];
+  } else {
+    sql = `SELECT user_id FROM group_members WHERE group_id::text = $1`;
+    params = [groupId];
+  }
+  const result = await pool.query(sql, params);
+  return result.rows.map(r => r.user_id).filter(id => !String(id).startsWith('member_'));
+}
+
 async function getUserTokens(userIds) {
   if (!userIds.length) return [];
   const result = await pool.query(
