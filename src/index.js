@@ -40,25 +40,6 @@ app.get('/config/:key', async (req, res) => {
   }
 });
 
-app.get('/test-fcm', async (req, res) => {
-  try {
-    const raw    = process.env.FIREBASE_SERVICE_ACCOUNT;
-    const parsed = JSON.parse(raw);
-    res.json({ ok: true, project_id: parsed.project_id, has_private_key: !!parsed.private_key });
-  } catch(e) {
-    res.json({ ok: false, error: e.message });
-  }
-});
-
-app.get('/debug-fcm', async (req, res) => {
-  try {
-    const rows = await query('SELECT id, name, fcm_token FROM users LIMIT 5');
-    res.json(rows);
-  } catch(e) {
-    res.json({ error: e.message });
-  }
-});
-
 app.use((req, res) => res.status(404).json({ error: `Route not found: ${req.method} ${req.path}` }));
 app.use((err, req, res, next) => {
   console.error('[Unhandled error]', err);
