@@ -56,11 +56,28 @@ async function getUserTokens(userIds) {
   return result.rows.map(r => r.fcm_token).filter(Boolean);
 }
 
+// Save notification to DB for a list of user_ids
+async function saveNotificationsToDB(userIds, notification, data = {}) {
+  if (!userIds.length) return;
+  try {
+    for (const userId of userIds) {
+      await pool.query(
+        `INSERT INTO notifications (user_id, title, body, route, type)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [userId, notification.title, notification.body, data.route || null, data.type || 'general']
+      );
+    }
+  } catch (e) {
+    console.error('[FCM] DB save error:', e.message);
+  }
+}
+
 async function sendToTokens(tokens, notification, data = {}) {
-  if (!admin || !tokens.length) {
+  if (!tokens.length) {
     console.log('[FCM] No tokens, skipping. Count:', tokens.length);
     return;
   }
+  if (!admin) return;
   try {
     const response = await admin.messaging().sendEachForMulticast({
       tokens,
@@ -92,10 +109,12 @@ async function notifyExpenseAdded({ groupId, groupName, addedByName, addedByUser
   console.log('[FCM] notifyExpenseAdded, groupId:', groupId, 'excludeUser:', addedByUserId);
   const tokens = await getGroupMemberTokens(groupId, addedByUserId);
   console.log('[FCM] tokens found:', tokens.length);
-  await sendToTokens(tokens,
-    { title: `New expense in ${groupName}`, body: `${addedByName} added "${expenseTitle}" Rs.${Math.round(amount)}` },
-    { route: `/group/${groupId}`, type: 'expense' }
-  );
+  const notification = { title: `New expense in ${groupName}`, body: `${addedByName} added "${expenseTitle}" Rs.${Math.round(amount)}` };
+  const data = { route: `/group/${groupId}`, type: 'expense' };
+  // Save to DB for all group members (except adder)
+  const userIds = await getGroupMemberUserIds(groupId, addedByUserId);
+  await saveNotificationsToDB(userIds, notification, data);
+  await sendToTokens(tokens, notification, data);
 }
 
 async function notifyExpenseUpdated({ groupId, groupName, updatedByName, updatedByUserId, expenseTitle, action = 'updated' }) {
@@ -108,16 +127,17 @@ async function notifyExpenseUpdated({ groupId, groupName, updatedByName, updated
 
 async function notifyMemberAdded({ groupId, groupName, addedByName, newMemberUserId, newMemberName }) {
   const existingTokens = await getGroupMemberTokens(groupId, newMemberUserId);
-  await sendToTokens(existingTokens,
-    { title: `New member in ${groupName}`, body: `${addedByName} added ${newMemberName} to the group` },
-    { route: `/group/${groupId}`, type: 'member_add' }
-  );
+  const notif1 = { title: `New member in ${groupName}`, body: `${addedByName} added ${newMemberName} to the group` };
+  const data1  = { route: `/group/${groupId}`, type: 'member_add' };
+  const existingUserIds = await getGroupMemberUserIds(groupId, newMemberUserId);
+  await saveNotificationsToDB(existingUserIds, notif1, data1);
+  await sendToTokens(existingTokens, notif1, data1);
   if (newMemberUserId) {
     const newMemberTokens = await getUserTokens([newMemberUserId]);
-    await sendToTokens(newMemberTokens,
-      { title: `You were added to ${groupName}!`, body: `${addedByName} added you. Open to see expenses.` },
-      { route: `/group/${groupId}`, type: 'group_invite' }
-    );
+    const notif2 = { title: `You were added to ${groupName}!`, body: `${addedByName} added you. Open to see expenses.` };
+    const data2  = { route: `/group/${groupId}`, type: 'group_invite' };
+    await saveNotificationsToDB([newMemberUserId], notif2, data2);
+    await sendToTokens(newMemberTokens, notif2, data2);
   }
 }
 
@@ -157,6 +177,43 @@ router.delete('/fcm-token', requireAuth, async (req, res) => {
       'UPDATE users SET fcm_token = NULL WHERE id = (SELECT id FROM users WHERE firebase_uid = $1)',
       [req.uid]
     );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /users/notifications — fetch user ke notifications
+router.get('/notifications', requireAuth, async (req, res) => {
+  try {
+    const userResult = await pool.query(
+      'SELECT id FROM users WHERE firebase_uid = $1 LIMIT 1', [req.uid]
+    );
+    if (!userResult.rows.length) return res.status(404).json({ error: 'User not found' });
+    const userId = userResult.rows[0].id;
+
+    const result = await pool.query(
+      `SELECT id, title, body, route, type, is_read, created_at
+       FROM notifications WHERE user_id = $1
+       ORDER BY created_at DESC LIMIT 50`,
+      [userId]
+    );
+    res.json({ notifications: result.rows });
+  } catch (e) {
+    console.error('/notifications error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PATCH /users/notifications/read-all — mark all as read
+router.patch('/notifications/read-all', requireAuth, async (req, res) => {
+  try {
+    const userResult = await pool.query(
+      'SELECT id FROM users WHERE firebase_uid = $1 LIMIT 1', [req.uid]
+    );
+    if (!userResult.rows.length) return res.status(404).json({ error: 'User not found' });
+    const userId = userResult.rows[0].id;
+    await pool.query('UPDATE notifications SET is_read = true WHERE user_id = $1', [userId]);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
