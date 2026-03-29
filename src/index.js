@@ -40,6 +40,21 @@ app.get('/config/:key', async (req, res) => {
   }
 });
 
+
+// Check if phone number exists (no auth required — used before login)
+app.get('/check-phone', async (req, res) => {
+  try {
+    const { phone } = req.query; // e.g. "+917000028861"
+    if (!phone) return res.status(400).json({ error: 'phone required' });
+    const rows = await query(
+      `SELECT id FROM users WHERE phone = $1 LIMIT 1`, [phone]
+    );
+    res.json({ exists: rows.length > 0 });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.use((req, res) => res.status(404).json({ error: `Route not found: ${req.method} ${req.path}` }));
 app.use((err, req, res, next) => {
   console.error('[Unhandled error]', err);
