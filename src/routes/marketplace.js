@@ -109,7 +109,7 @@ router.get('/properties',async (req, res) => {
 
 // ── GET /marketplace/properties/mine ─────────────────────────────────────────
 
-router.get('/properties/mine', async (req, res) => {
+router.get('/properties/mine', requireAuth, async (req, res) => {
   try {
     const uid = req.uid;
     if (!uid) return res.status(401).json({ error: 'Unauthenticated' });
@@ -166,7 +166,7 @@ router.post('/properties', requireAuth, async (req, res) => {
 
 // ── DELETE /marketplace/properties/:id ────────────────────────────────────────
 
-router.delete('/properties/:id', async (req, res) => {
+router.delete('/properties/:id', requireAuth, async (req, res) => {
   try {
     const uid = req.uid;
     if (!uid) return res.status(401).json({ error: 'Unauthenticated' });
@@ -188,7 +188,7 @@ router.delete('/properties/:id', async (req, res) => {
 
 // ── POST /marketplace/unlocks ─────────────────────────────────────────────────
 
-router.post('/unlocks', async (req, res) => {
+router.post('/unlocks', requireAuth, async (req, res) => {
   try {
     const uid = req.uid;
     if (!uid) return res.status(401).json({ error: 'Unauthenticated' });
@@ -209,7 +209,7 @@ router.post('/unlocks', async (req, res) => {
 
 // ── GET /marketplace/unlocks ──────────────────────────────────────────────────
 
-router.get('/unlocks', async (req, res) => {
+router.get('/unlocks', requireAuth, async (req, res) => {
   try {
     const uid = req.uid;
     if (!uid) return res.status(401).json({ error: 'Unauthenticated' });
@@ -229,7 +229,7 @@ router.get('/unlocks', async (req, res) => {
 // Decodes a base-64 file sent by the Flutter client and stores it.
 // Swap the storage section for S3, Supabase Storage, Cloudinary, etc.
 
-router.post('/upload', async (req, res) => {
+router.post('/upload', requireAuth, async (req, res) => {
   try {
     const uid = req.uid;
     if (!uid) return res.status(401).json({ error: 'Unauthenticated' });
