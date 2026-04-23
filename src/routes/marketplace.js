@@ -11,6 +11,7 @@
 const express  = require('express');
 const { Pool } = require('pg');
 const router   = express.Router();
+const { requireAuth } = require('../middleware/auth');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -44,7 +45,7 @@ const row2prop = (r) => ({
 // Query params: sort_by, property_type, available_for, min_budget, max_budget,
 //               location, amenities (comma-separated)
 
-router.get('/properties', async (req, res) => {
+router.get('/properties',async (req, res) => {
   try {
     const {
       sort_by       = 'latest',
@@ -126,7 +127,7 @@ router.get('/properties/mine', async (req, res) => {
 
 // ── POST /marketplace/properties ──────────────────────────────────────────────
 
-router.post('/properties', async (req, res) => {
+router.post('/properties', requireAuth, async (req, res) => {
   try {
     const uid = req.uid;
     if (!uid) return res.status(401).json({ error: 'Unauthenticated' });
