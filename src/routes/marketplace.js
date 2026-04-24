@@ -11,6 +11,7 @@
 const express  = require('express');
 const { Pool } = require('pg');
 const router   = express.Router();
+const cloudinary = require("cloudinary").v2;
 const { requireAuth } = require('../middleware/auth');
 
 const pool = new Pool({
@@ -229,34 +230,48 @@ router.get('/unlocks', requireAuth, async (req, res) => {
 // Decodes a base-64 file sent by the Flutter client and stores it.
 // Swap the storage section for S3, Supabase Storage, Cloudinary, etc.
 
-router.post('/upload', requireAuth, async (req, res) => {
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+router.post("/upload", requireAuth, async (req, res) => {
   try {
     const uid = req.uid;
-    if (!uid) return res.status(401).json({ error: 'Unauthenticated' });
+
+    if (!uid) {
+      return res.status(401).json({
+        error: "Unauthenticated",
+      });
+    }
 
     const { file_name, data } = req.body;
-    if (!data) return res.status(400).json({ error: 'No file data provided' });
 
-    const buffer = Buffer.from(data, 'base64');
+    if (!data) {
+      return res.status(400).json({
+        error: "No file data provided",
+      });
+    }
 
-    // ── Replace the block below with your preferred storage provider ──────────
-    // Example: AWS S3
-    //   const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
-    //   const s3  = new S3Client({ region: process.env.AWS_REGION });
-    //   const key = `marketplace/${uid}/${Date.now()}_${file_name}`;
-    //   await s3.send(new PutObjectCommand({
-    //     Bucket: process.env.S3_BUCKET, Key: key, Body: buffer, ContentType: 'image/jpeg',
-    //   }));
-    //   const url = `https://${process.env.S3_BUCKET}.s3.amazonaws.com/${key}`;
-    // ── End storage block ──────────────────────────────────────────────────────
+    const result = await cloudinary.uploader.upload(
+      `data:image/jpeg;base64,${data}`,
+      {
+        folder: `marketplace/${uid}`,
+        public_id: `${Date.now()}_${file_name}`,
+      }
+    );
 
-    // Placeholder — returns a data URL so the app works without extra storage setup.
-    const url = `data:image/jpeg;base64,${data.substring(0, 30)}...`;
+    return res.json({
+      url: result.secure_url,
+    });
 
-    res.json({ url });
   } catch (err) {
-    console.error('[marketplace] POST /upload', err);
-    res.status(500).json({ error: err.message });
+    console.error("[marketplace] POST /upload", err);
+
+    return res.status(500).json({
+      error: err.message,
+    });
   }
 });
 
