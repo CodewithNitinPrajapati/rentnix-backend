@@ -4,11 +4,13 @@ const cors        = require('cors');
 const helmet      = require('helmet');
 const rateLimit   = require('express-rate-limit');
 
-const usersRouter      = require('./routes/users');
-const groupsRouter     = require('./routes/groups');
-const expensesRouter   = require('./routes/expenses');
-const propertiesRouter = require('./routes/properties');
+const usersRouter       = require('./routes/users');
+const groupsRouter      = require('./routes/groups');
+const expensesRouter    = require('./routes/expenses');
+const propertiesRouter  = require('./routes/properties');
 const marketplaceRouter = require('./routes/marketplace');
+const flatmatesRouter   = require('./routes/flatmates');
+const safetyRouter      = require('./routes/safety');
 const { router: notifRouter } = require('./routes/notifications');
 const { query } = require('./db');
 
@@ -31,7 +33,9 @@ app.use('/groups',     groupsRouter);
 app.use('/expenses',   expensesRouter);
 app.use('/properties', propertiesRouter);
 app.use('/users',      notifRouter);
-app.use('/marketplace',      marketplaceRouter);
+app.use('/marketplace',marketplaceRouter);
+app.use('/flatmates',  flatmatesRouter);
+app.use('/safety',     safetyRouter);
 
 app.get('/config/:key', async (req, res) => {
   try {
