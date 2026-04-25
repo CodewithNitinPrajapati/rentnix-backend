@@ -34,7 +34,6 @@ app.use('/properties', propertiesRouter);
 app.use('/users',      notifRouter);
 app.use('/marketplace',marketplaceRouter);
 app.use('/flatmates',  flatmatesRouter);
-app.use('/safety', require('./routes/safety'))
 
 app.get('/config/:key', async (req, res) => {
   try {
