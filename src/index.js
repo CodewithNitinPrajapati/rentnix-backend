@@ -10,7 +10,6 @@ const expensesRouter    = require('./routes/expenses');
 const propertiesRouter  = require('./routes/properties');
 const marketplaceRouter = require('./routes/marketplace');
 const flatmatesRouter   = require('./routes/flatmates');
-const safetyRouter      = require('./routes/safety');
 const { router: notifRouter } = require('./routes/notifications');
 const { query } = require('./db');
 
@@ -35,7 +34,7 @@ app.use('/properties', propertiesRouter);
 app.use('/users',      notifRouter);
 app.use('/marketplace',marketplaceRouter);
 app.use('/flatmates',  flatmatesRouter);
-app.use('/safety',     safetyRouter);
+app.use('/safety', require('./routes/safety'))
 
 app.get('/config/:key', async (req, res) => {
   try {
