@@ -117,8 +117,9 @@ router.post('/', requireAuth, async (req, res) => {
     const { rows } = await pool.query(
       `INSERT INTO flatmates
          (user_id, name, age, profession, budget, preferred_location,
-          habits, gender_preference, move_in_date, avatar_url, bio)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          habits, gender_preference, move_in_date, avatar_url, bio,
+          phone, contact_preference)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING *`,
       [
         uid, name, age, profession, budget, preferred_location,
@@ -127,6 +128,8 @@ router.post('/', requireAuth, async (req, res) => {
         move_in_date,
         avatar_url ?? null,
         bio ?? null,
+        req.body.phone ?? '',
+        req.body.contact_preference ?? 'inApp',
       ]
     );
     res.status(201).json({ flatmate: row2profile(rows[0]) });
@@ -154,7 +157,8 @@ router.put('/me', requireAuth, async (req, res) => {
       `UPDATE flatmates
        SET name=$2, age=$3, profession=$4, budget=$5,
            preferred_location=$6, habits=$7, gender_preference=$8,
-           move_in_date=$9, avatar_url=$10, bio=$11
+           move_in_date=$9, avatar_url=$10, bio=$11,
+           phone=$12, contact_preference=$13
        WHERE user_id=$1
        RETURNING *`,
       [
@@ -164,6 +168,8 @@ router.put('/me', requireAuth, async (req, res) => {
         move_in_date,
         avatar_url ?? null,
         bio ?? null,
+        req.body.phone ?? '',
+        req.body.contact_preference ?? 'inApp',
       ]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Profile not found' });
