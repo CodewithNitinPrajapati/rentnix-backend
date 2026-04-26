@@ -105,7 +105,7 @@ app.use((err, req, res, next) => {
 
 const httpServer = http.createServer(app);
 
-require('./chat_server')(httpServer);
+require('./routes/chat_server')(httpServer);
 
 httpServer.listen(PORT, () => {
   console.log(`✅ Rentnix API + Chat running on port ${PORT}`);
