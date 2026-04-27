@@ -315,15 +315,72 @@ module.exports = function attachChatServer(httpServer) {
         const roomForMe    = rowToRoom(updatedRoom[0], uid);
         const roomForOther = rowToRoom(updatedRoom[0], otherId);
 
-        // Emit new message to everyone in the Socket.io room (both joined sockets)
+        // ── Emit over Socket.io ──────────────────────────────────────────
+        // To everyone in the socket room (both participants if both online)
         io.to(room_id).emit('new_message', { message });
-
-        // Update room metadata for each user
         socket.emit('rooms_updated', { room: roomForMe });
         emitToUser(otherId, 'rooms_updated', { room: roomForOther });
-
-        // If other user is online but not in the room, still push the message
+        // Push to other user even if they haven't joined the room socket
         emitToUser(otherId, 'new_message', { message });
+
+        // ── FCM push notification for offline receiver ───────────────────
+        // Only send if the other user has NO active socket connection
+        const isOtherOnline = userSockets.has(otherId) &&
+                              userSockets.get(otherId).size > 0;
+
+        if (!isOtherOnline) {
+          try {
+            // Look up FCM token from users table
+            const { rows: tokenRows } = await pool.query(
+              `SELECT fcm_token FROM users WHERE id=$1 AND fcm_token IS NOT NULL`,
+              [otherId]
+            );
+            if (tokenRows.length > 0 && tokenRows[0].fcm_token) {
+              const fcmToken = tokenRows[0].fcm_token;
+              const senderDisplay = socket.userName || 'Someone';
+              const msgPreview = text.trim().length > 80
+                ? text.trim().substring(0, 80) + '…'
+                : text.trim();
+
+              await admin.messaging().send({
+                token: fcmToken,
+                notification: {
+                  title: senderDisplay,
+                  body:  msgPreview,
+                },
+                data: {
+                  route:      `/chat/${room_id}`,
+                  room_id:    room_id,
+                  sender_id:  uid,
+                  sender_name: senderDisplay,
+                  type:       'chat_message',
+                },
+                android: {
+                  notification: {
+                    channelId:    'chat_messages',
+                    priority:     'high',
+                    defaultSound: true,
+                    clickAction:  'FLUTTER_NOTIFICATION_CLICK',
+                  },
+                  priority: 'high',
+                },
+                apns: {
+                  payload: {
+                    aps: {
+                      alert: { title: senderDisplay, body: msgPreview },
+                      badge: roomForOther.unread_count,
+                      sound: 'default',
+                    },
+                  },
+                },
+              });
+              console.log(`[chat] FCM sent to uid=${otherId}`);
+            }
+          } catch (fcmErr) {
+            // FCM failure must never break the chat flow
+            console.error('[chat] FCM push error:', fcmErr.message);
+          }
+        }
 
       } catch (err) { chatErr(err.message); }
     });
